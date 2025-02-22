@@ -1,0 +1,10 @@
+altgraph==0.17.4
+colorama==0.4.6
+mnemonic==0.21
+packaging==24.2
+pefile==2023.2.7
+pyinstaller==6.11.1
+pyinstaller-hooks-contrib==2025.1
+pywin32-ctypes==0.2.3
+setuptools==75.8.0
+tqdm==4.67.1
