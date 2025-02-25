@@ -15,16 +15,29 @@ MIN_BIP39_MATCHES = 3   # Минимальное количество совпа
 BIP39_EN_WORDS = set(Mnemonic("english").wordlist)
 BIP39_RU_WORDS = set(Mnemonic("russian").wordlist)
 
-def is_valid_phrase(words):
+def is_valid_phrase(words, original_phrase):
     """
     Проверяет, является ли список слов валидной BIP39 фразой.
     """
+    # Условие 1: Длина фразы должна быть от MIN_PHRASE_LENGTH до MAX_PHRASE_LENGTH
     if not (MIN_PHRASE_LENGTH <= len(words) <= MAX_PHRASE_LENGTH):
         return False
-    
-    # Подсчет совпадений с BIP39 словами (английский и русский языки)
+
+    # Условие 2: Ни одно слово не должно повторяться
+    if len(words) != len(set(words)):
+        return False
+
+    # Условие 3: Минимум MIN_BIP39_MATCHES совпадений с BIP39 словами
     bip39_count = sum(1 for word in words if word in BIP39_EN_WORDS or word in BIP39_RU_WORDS)
-    return bip39_count >= MIN_BIP39_MATCHES
+    if bip39_count < MIN_BIP39_MATCHES:
+        return False
+
+    # Условие 4: Если фраза сконкатенирована, проверяем её длину
+    if " " not in original_phrase:  # Фраза сконкатенирована
+        if not (MIN_PHRASE_LENGTH * 8 <= len(original_phrase) <= MAX_PHRASE_LENGTH * 8):
+            return False
+
+    return True
 
 def extract_phrases_from_text(text):
     """
@@ -40,9 +53,8 @@ def extract_phrases_from_text(text):
         for length in range(MIN_PHRASE_LENGTH, MAX_PHRASE_LENGTH + 1):
             if i + length <= len(cleaned_words):
                 phrase = cleaned_words[i:i + length]
-                if is_valid_phrase(phrase):
-                    # Сохраняем исходную фразу (не очищенную)
-                    original_phrase = " ".join(words[i:i + length])
+                original_phrase = " ".join(words[i:i + length])
+                if is_valid_phrase(phrase, original_phrase):
                     phrases.add(original_phrase)  # Добавляем фразу в множество
     return phrases
 
