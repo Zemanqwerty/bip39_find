@@ -58,7 +58,7 @@ def extract_phrases_from_text(text):
                     phrases.add(original_phrase)  # Добавляем фразу в множество
     return phrases
 
-def process_file(file_path):
+def process_file(file_path, output_dir):
     """
     Обрабатывает один файл: читает его содержимое и ищет BIP39 фразы.
     """
@@ -71,27 +71,43 @@ def process_file(file_path):
             print(f"{Fore.RED}Файл: {file_path}{Style.RESET_ALL}")
             for phrase in sorted(phrases):  # Сортируем фразы для удобства чтения
                 print(f"  Найдена фраза: {phrase}")
+
+            # Сохраняем найденные фразы в соответствующие файлы
+            file_extension = os.path.splitext(file_path)[1][1:]  # Получаем расширение файла без точки
+            output_file_path = os.path.join(output_dir, f"{file_extension}.txt")
+            with open(output_file_path, 'a', encoding='utf-8') as output_file:
+                for phrase in sorted(phrases):
+                    output_file.write(f"{file_path} --- {phrase}\n")
     except Exception as e:
         print(f"Ошибка при обработке файла {file_path}: {e}")
 
-def scan_directory(directory):
+def scan_directory(directory, output_dir):
     """
     Сканирует указанную директорию и обрабатывает все файлы.
     """
     for root, _, files in os.walk(directory):
         for file_name in files:
             file_path = os.path.join(root, file_name)
-            process_file(file_path)
+            process_file(file_path, output_dir)
 
 if __name__ == "__main__":
     # Укажите путь к директории, которую нужно сканировать
     directory_to_scan = input("Введите путь к директории: ").strip()
 
+    # Запрос параметров поиска
     MIN_PHRASE_LENGTH = int(input('Введите минимальную длину искомой фразы (чаще всего используется 12): '))
     MAX_PHRASE_LENGTH = int(input('Введите максимальную длину искомой фразы (Иногда фразы могут достигать 24): '))
     MIN_BIP39_MATCHES = int(input('Введите минимальное количество совпадений с bip39 (чем меньше - тем больше разброс по фразам): '))
 
+    # Запрос пути и имени для выходной директории
+    output_base_dir = input("Введите путь к директории, где создать новую папку: ").strip()
+    output_folder_name = input("Введите имя новой папки: ").strip()
+    output_dir = os.path.join(output_base_dir, output_folder_name)
+
+    # Создание выходной директории
+    os.makedirs(output_dir, exist_ok=True)
+
     if os.path.isdir(directory_to_scan):
-        scan_directory(directory_to_scan)
+        scan_directory(directory_to_scan, output_dir)
     else:
         print("Указанный путь не является директорией.")
