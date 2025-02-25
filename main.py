@@ -1,144 +1,85 @@
 import os
 import re
 from mnemonic import Mnemonic
-from collections import Counter
+from colorama import Fore, Style, init
 
-# Создаем объект Mnemonic для английского и русского языков
-mnemo_en = Mnemonic("english")
-mnemo_ru = Mnemonic("russian")
+# Инициализация colorama
+init(autoreset=True)
 
-# Получаем список слов BIP-39 и преобразуем его в множество для быстрого поиска
-BIP39_SET_EN = set(mnemo_en.wordlist)
-BIP39_SET_RU = set(mnemo_ru.wordlist)
+# Константы
+MIN_PHRASE_LENGTH = 12  # Минимальная длина фразы
+MAX_PHRASE_LENGTH = 24  # Максимальная длина фразы
+MIN_BIP39_MATCHES = 3   # Минимальное количество совпадений с BIP39 словами
 
-# Минимальное количество слов из списка BIP-39 для валидной фразы
-MIN_BIP39_WORDS = 3
+# Инициализация списка BIP39 слов для английского и русского языков
+BIP39_EN_WORDS = set(Mnemonic("english").wordlist)
+BIP39_RU_WORDS = set(Mnemonic("russian").wordlist)
 
-def is_concatenated_bip39_word(word, word_set):
+def is_valid_phrase(words):
     """
-    Проверяет, является ли слово сконкатенированной последовательностью слов из word_set.
-    Возвращает True, если слово состоит из 8–24 слов из word_set.
+    Проверяет, является ли список слов валидной BIP39 фразой.
     """
-    n = len(word)
-    dp = [False] * (n + 1)
-    dp[0] = True  # Базовый случай: пустая строка валидна
-    word_count = [0] * (n + 1)  # Массив для подсчета количества слов в разбиении
+    if not (MIN_PHRASE_LENGTH <= len(words) <= MAX_PHRASE_LENGTH):
+        return False
+    
+    # Подсчет совпадений с BIP39 словами (английский и русский языки)
+    bip39_count = sum(1 for word in words if word in BIP39_EN_WORDS or word in BIP39_RU_WORDS)
+    return bip39_count >= MIN_BIP39_MATCHES
 
-    for i in range(1, n + 1):
-        for j in range(max(0, i - 8), i):  # Ограничение длины слова до 8 символов (максимальная длина BIP-39 слова)
-            if dp[j] and word[j:i] in word_set:
-                dp[i] = True
-                word_count[i] = word_count[j] + 1
-                break
-
-    # Проверяем, что слово состоит из 8–24 слов
-    return dp[n] and 8 <= word_count[n] <= 24
-
-def extract_bip39_phrases(text, word_set):
+def extract_phrases_from_text(text):
     """
-    Извлекает все фразы BIP-39 из текста с длиной от 8 до 24 слов.
-    Также извлекает одиночные слова длиной от 30 символов, если они являются сконкатенированными словами из word_set,
-    состоящими из 8–24 слов.
-    Разрешает до 2 дубликатов каждого слова.
-    Обрабатывает многострочные фразы, где каждая строка может содержать несколько слов.
-    Фраза считается валидной только если хотя бы одно слово (или часть сконкатенированного слова) начинается с буквы "g".
+    Извлекает уникальные потенциальные BIP39 фразы из текста.
     """
-    phrases = []
-    lines = text.splitlines()  # Разбиваем текст на строки
-    current_phrase = []
+    # Разбиваем текст на слова, сохраняя исходный текст для вывода
+    words = text.split()
+    cleaned_words = [re.sub(r'[^a-zA-Zа-яА-Я]', '', word.lower()) for word in words]
 
-    for line in lines:
-        words = re.findall(r'\b\w+\b', line.lower())  # Извлекаем все слова из строки
-        valid_words_in_line = [word for word in words if word in word_set]  # Фильтруем только валидные слова
-        current_phrase.extend(valid_words_in_line)
-
-        # Если накоплено достаточно слов для проверки фразы
-        if len(current_phrase) >= MIN_BIP39_WORDS:
-            # Подсчитываем частоту каждого слова
-            word_counts = Counter(current_phrase)
-            # Проверяем, что каждое слово повторяется не более 2 раз
-            if all(count <= 2 for count in word_counts.values()):
-                # Проверяем длину фразы (общее количество слов)
-                total_words = len(current_phrase)
-                if 8 <= total_words <= 24:
-                    # Проверяем минимальное количество слов из BIP-39
-                    bip39_word_count = sum(1 for word in current_phrase if word in word_set)
-                    if bip39_word_count >= MIN_BIP39_WORDS:
-                        # Проверяем, что хотя бы одно слово начинается с буквы "g"
-                        if any(word.startswith("g") for word in current_phrase):
-                            phrases.append(" ".join(current_phrase))
-
-        # Если текущая строка не содержит валидных слов, сбрасываем фразу
-        if not valid_words_in_line:
-            current_phrase = []
-
-    # Проверка длинных слов (сконкатенированных)
-    long_words = re.findall(r'\b\w{30,}\b', text.lower())  # Находим слова длиной 30+ символов
-    for word in long_words:
-        if is_concatenated_bip39_word(word, word_set):
-            # Разбиваем сконкатенированное слово на части
-            parts = []
-            n = len(word)
-            i = 0
-            while i < n:
-                for j in range(min(i + 8, n), i, -1):  # Ищем подстроки длиной до 8 символов
-                    if word[i:j] in word_set:
-                        parts.append(word[i:j])
-                        i = j
-                        break
-            # Проверяем, что хотя бы одна часть начинается с "g"
-            if any(part.startswith("g") for part in parts):
-                phrases.append(word)
-
+    # Группируем слова в потенциальные фразы длиной от MIN_PHRASE_LENGTH до MAX_PHRASE_LENGTH слов
+    phrases = set()  # Используем множество для исключения дубликатов
+    for i in range(len(cleaned_words)):
+        for length in range(MIN_PHRASE_LENGTH, MAX_PHRASE_LENGTH + 1):
+            if i + length <= len(cleaned_words):
+                phrase = cleaned_words[i:i + length]
+                if is_valid_phrase(phrase):
+                    # Сохраняем исходную фразу (не очищенную)
+                    original_phrase = " ".join(words[i:i + length])
+                    phrases.add(original_phrase)  # Добавляем фразу в множество
     return phrases
 
-def search_files(directory, excluded_dirs=None):
+def process_file(file_path):
     """
-    Поиск файлов с фразами BIP-39 длиной от 8 до 24 слов, а также одиночными словами длиной от 30 символов,
-    которые являются сконкатенированными словами из BIP-39 списка.
-    Результаты (путь к файлу и фразы) записываются в указанный файл.
-    excluded_dirs: Список директорий, которые нужно исключить из обработки.
+    Обрабатывает один файл: читает его содержимое и ищет BIP39 фразы.
     """
-    if excluded_dirs is None:
-        excluded_dirs = []
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+            text = file.read()
+        phrases = extract_phrases_from_text(text)
+        if phrases:
+            # Вывод имени файла красным цветом
+            print(f"{Fore.RED}Файл: {file_path}{Style.RESET_ALL}")
+            for phrase in sorted(phrases):  # Сортируем фразы для удобства чтения
+                print(f"  Найдена фраза: {phrase}")
+    except Exception as e:
+        print(f"Ошибка при обработке файла {file_path}: {e}")
 
-    for root, dirs, files in os.walk(directory):
-        # Исключаем указанные директории
-        dirs[:] = [d for d in dirs if os.path.join(root, d) not in excluded_dirs]
+def scan_directory(directory):
+    """
+    Сканирует указанную директорию и обрабатывает все файлы.
+    """
+    for root, _, files in os.walk(directory):
         for file_name in files:
             file_path = os.path.join(root, file_name)
-            try:
-                # Проверяем, является ли файл текстовым
-                if not os.path.isfile(file_path):
-                    continue
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
-                    content = file.read()  # Читаем весь файл
-                    # Ищем фразы для английских и русских слов BIP-39
-                    phrases_en = extract_bip39_phrases(content, BIP39_SET_EN)
-                    phrases_ru = extract_bip39_phrases(content, BIP39_SET_RU)
-                    # Объединяем найденные фразы
-                    all_phrases = phrases_en + phrases_ru
-                    if all_phrases:
-                        # Записываем путь к файлу и найденные фразы
-                        for phrase in all_phrases:
-                            print(f"  Файл: {file_path}")
-                            print(f"  Фраза: {phrase}")
-                            # out.write(f"Файл: {file_path}\n")
-                            # out.write(f"  Фраза: {phrase}\n\n")
-            except Exception as e:
-                pass
+            process_file(file_path)
 
+if __name__ == "__main__":
+    # Укажите путь к директории, которую нужно сканировать
+    directory_to_scan = input("Введите путь к директории: ").strip()
 
-if __name__ == "main":
-    # Указываем путь к диску C:
-    directory_to_search = input('Введите путь к директории, в которой нужно искать: ')
-    # Файл для записи результатов
-    # output_file = input('Введите путь к файлу, в который будут записаны результаты: ')
-    # Исключаем папку Windows и её поддиректории
-    excluded_dirs = []
-    if not os.path.isdir(directory_to_search):
-        print("Указанный путь не является директорией.")
+    MIN_PHRASE_LENGTH = int(input('Введите минимальную длину искомой фразы (чаще всего используется 12): '))
+    MAX_PHRASE_LENGTH = int(input('Введите максимальную длину искомой фразы (Иногда фразы могут достигать 24): '))
+    MIN_BIP39_MATCHES = int(input('Введите минимальное количество совпадений с bip39 (чем меньше - тем больше разброс по фразам): '))
+
+    if os.path.isdir(directory_to_scan):
+        scan_directory(directory_to_scan)
     else:
-        print("Начинаю поиск файлов...")
-        search_files(directory_to_search, excluded_dirs=excluded_dirs)
-        input("\nНажмите Enter, чтобы закрыть программу...")
+        print("Указанный путь не является директорией.")
